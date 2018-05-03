@@ -7,6 +7,7 @@ import serial
 import time
 import platform
 from collections import deque
+from itertools import chain
 
 class serialAcq:
 
@@ -75,7 +76,7 @@ class livePlot:
     def __init__(self, updateData_cb, ax, **kwargs):
 
         defaults = {
-            'windowSize'    : 500,
+            'windowSize'    : 500 ,
             'nPlots'        : 2,
             'showLegend'    : True,
             'customLabels'  : ['label1', 'label2'],
@@ -105,11 +106,10 @@ class livePlot:
         
         for line in self.lines:
             self.ax.add_line(line)
-        
+         
         self.ax.set_xlim(0, self.windowSize)
         self.ax.set_ylim(self.minY, self.maxY) # Will be resized later if needed
 
-        # ax.xaxis.set_animated(True)
         if self.showLegend:
             self.ax.legend(self.customLabels)
     
@@ -121,11 +121,39 @@ class livePlot:
         for line, Y in zip(self.lines, self.dataY):
             line.set_data(self.dataX, Y)
         
-        #TODO y rescaling
+#         if self.autoResizeY:
+#             highestY = np.max(self.dataY
+#             self.ax.set_ylim
         self.maxX = np.max([self.windowSize, self.dataX[-1]])
         self.ax.set_xlim(self.maxX - self.windowSize, self.maxX)
-        self.ax.relim()
-        return self.lines#, self.ax.xaxis
+#         self.ax.autoscale_view()
+#         self.ax.relim()
+        artists = []
+        for a in self.lines:
+            artists.append(a)
+        artists.append(self.ax.xaxis)
+        return artists
+
+
+def _blit_draw(self, artists, bg_cache):
+    # Handles blitted drawing, which renders only the artists given instead
+    # of the entire figure.
+    updated_ax = []
+    for a in artists:
+        # If we haven't cached the background for this axes object, do
+        # so now. This might not always be reliable, but it's an attempt
+        # to automate the process.
+        if a.axes not in bg_cache:
+            bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.figure.bbox)
+        a.axes.draw_artist(a)
+        updated_ax.append(a.axes)
+
+    # After rendering all the needed artists, blit each axes individually.
+    for ax in set(updated_ax):
+        ax.figure.canvas.blit(ax.figure.bbox)
+
+
+
 
 
 
@@ -136,18 +164,23 @@ if __name__ == '__main__':
     print("Using matplotlib: " + matplotlib.__version__)
     print("Serial: " + serial.__version__)
 
-    
-    #TODO: instantiate serial
-    acquisition = serialAcq(XChan=False)
+    #Hackish
+    matplotlib.animation.Animation._blit_draw = _blit_draw
+
+
+    # Serial
+    acquisition = serialAcq(
+                            port            = '/dev/ttyACM3',
+                            XChan           = False,
+                            bufferLength    = 700)
     acquisition.updateData()
-    # print(acquisition.buffers)
     
     
-    #TODO: instantiate plotter and run
+    #Plot and run
     fig, ax = plt.subplots()
-    plotter = livePlot(acquisition.updateData, ax)
-    plotter.updateFig()    
+    ax.grid(which='both')
+    plotter = livePlot(acquisition.updateData, ax,
+                        windowSize = 1500)
 
-    ani = matplotlib.animation.FuncAnimation(fig, plotter.updateFig, interval=10, blit=True) 
+    ani = matplotlib.animation.FuncAnimation(fig, plotter.updateFig, interval=1/24, blit=True) 
     
-
