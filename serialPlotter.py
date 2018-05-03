@@ -79,7 +79,7 @@ class livePlot:
             'windowSize'    : 500 ,
             'nPlots'        : 2,
             'showLegend'    : True,
-            'customLabels'  : ['label1', 'label2'],
+            'labels'        : ['label1', 'label2'],
             'autoResizeY'   : False,
             'minY'          : -20,
             'maxY'          : 500,
@@ -102,16 +102,18 @@ class livePlot:
         self.maxX   = self.windowSize
         self.dataX  = [0]
         self.dataY  = [ [0] for _ in range(self.nPlots) ]
-        self.lines  = [ matplotlib.lines.Line2D (self.dataX, Y) for Y in self.dataY ]
         
-        for line in self.lines:
-            self.ax.add_line(line)
+        self.lines = []
+        for Y in self.dataY:
+            line = ax.plot(self.dataX, Y)  # Returns a list of only one Line2D
+            self.lines.append(line[0])
+            self.ax.add_line(line[0])
          
         self.ax.set_xlim(0, self.windowSize)
         self.ax.set_ylim(self.minY, self.maxY) # Will be resized later if needed
 
         if self.showLegend:
-            self.ax.legend(self.customLabels)
+            self.ax.legend(self.labels)
     
     def updateFig(self, frame = 0): #frame number given by matplotlib's animation, useless
         data = np.array(self.updateData_cb())
@@ -121,17 +123,25 @@ class livePlot:
         for line, Y in zip(self.lines, self.dataY):
             line.set_data(self.dataX, Y)
         
-#         if self.autoResizeY:
-#             highestY = np.max(self.dataY
-#             self.ax.set_ylim
-        self.maxX = np.max([self.windowSize, self.dataX[-1]])
-        self.ax.set_xlim(self.maxX - self.windowSize, self.maxX)
-#         self.ax.autoscale_view()
-#         self.ax.relim()
+        
+        # Default artists to be updated
         artists = []
         for a in self.lines:
             artists.append(a)
         artists.append(self.ax.xaxis)
+        
+        # Y axis
+        if self.autoResizeY:
+            rangeY = (np.nanmin(self.dataY), np.nanmax(self.dataY))
+            #resize only if needed
+            if rangeY != self.ax.get_ylim():
+                self.ax.set_ylim(rangeY)
+            artists.append(self.ax.yaxis)
+
+        #X axis, always set new limits as scrolling is the main goal of this
+        self.maxX = np.max([self.windowSize, self.dataX[-1]])
+        self.ax.set_xlim(self.maxX - self.windowSize, self.maxX)
+
         return artists
 
 
@@ -180,7 +190,11 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     ax.grid(which='both')
     plotter = livePlot(acquisition.updateData, ax,
-                        windowSize = 1500)
+                        windowSize  = 1500,
+                        maxY        = 100, 
+                        minY        = 50,
+                        autoResizeY = False,
+                        )
 
-    ani = matplotlib.animation.FuncAnimation(fig, plotter.updateFig, interval=1/24, blit=True) 
+    ani = matplotlib.animation.FuncAnimation(fig, plotter.updateFig, interval=1, blit=True) 
     
