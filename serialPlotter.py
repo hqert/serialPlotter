@@ -69,21 +69,24 @@ class serialAcq:
         return self.buffers
 
 
-
+# Live plotter
+# TODO: allow scrolling to stop
+# 
 
 class livePlot:
 
-    def __init__(self, updateData_cb, ax, **kwargs):
+    def __init__(self, updateData_cb, fig, ax, **kwargs):
 
         defaults = {
             'windowSize'    : 500 ,
             'nPlots'        : 2,
             'showLegend'    : True,
-            'labels'        : ['label1', 'label2'],
+            'labels'        : ['poney 1', 'poney 2'],
             'autoResizeY'   : False,
+            'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
-            'running'       : False,
+#            'running'       : False,
         }
         
         # Use kwargs if available, defaults if not given
@@ -99,25 +102,32 @@ class livePlot:
 
         # Init plotting
         self.ax     = ax
+        self.fig    = fig
         self.maxX   = self.windowSize
         self.dataX  = [0]
         self.dataY  = [ [0] for _ in range(self.nPlots) ]
         
+        #TODO make label length not matter
         self.lines = []
-        for Y in self.dataY:
-            line = ax.plot(self.dataX, Y)  # Returns a list of only one Line2D
+        for Y, legend in zip(self.dataY, self.labels):
+            line = ax.plot(self.dataX, Y, label=legend)  # Returns a list of only one Line2D
             self.lines.append(line[0])
-            self.ax.add_line(line[0])
-         
+
         self.ax.set_xlim(0, self.windowSize)
         self.ax.set_ylim(self.minY, self.maxY) # Will be resized later if needed
 
-        if self.showLegend:
-            self.ax.legend(self.labels)
+        self.ax.legend().set_visible(self.showLegend)
+        
+        self.anim = matplotlib.animation.FuncAnimation(self.fig, self.updateFig, interval = 1/24, blit=True) 
+#        self.anim.event_source.stop()
+#        if not self.running:
+#            print('stop!')
+#            self.anim.event_source.stop()
+
     
     def updateFig(self, frame = 0): #frame number given by matplotlib's animation, useless
         data = np.array(self.updateData_cb())
-        print(data)
+#        print(data)
         self.dataX = data[0]
         self.dataY = data[1:]
         for line, Y in zip(self.lines, self.dataY):
@@ -128,7 +138,6 @@ class livePlot:
         artists = []
         for a in self.lines:
             artists.append(a)
-        artists.append(self.ax.xaxis)
         
         # Y axis
         if self.autoResizeY:
@@ -138,9 +147,11 @@ class livePlot:
                 self.ax.set_ylim(rangeY)
             artists.append(self.ax.yaxis)
 
-        #X axis, always set new limits as scrolling is the main goal of this
-        self.maxX = np.max([self.windowSize, self.dataX[-1]])
-        self.ax.set_xlim(self.maxX - self.windowSize, self.maxX)
+        #X axis
+        if self.XScroll:
+            self.maxX = np.max([self.windowSize, self.dataX[-1]])
+            self.ax.set_xlim(self.maxX - self.windowSize, self.maxX)
+            artists.append(self.ax.xaxis)
 
         return artists
 
@@ -182,19 +193,21 @@ if __name__ == '__main__':
     acquisition = serialAcq(
                             port            = '/dev/ttyACM3',
                             XChan           = False,
-                            bufferLength    = 700)
+                            bufferLength    = 700,
+                        )
     acquisition.updateData()
     
     
     #Plot and run
     fig, ax = plt.subplots()
     ax.grid(which='both')
-    plotter = livePlot(acquisition.updateData, ax,
+    plotter = livePlot(acquisition.updateData, fig, ax,
                         windowSize  = 1500,
-                        maxY        = 100, 
-                        minY        = 50,
-                        autoResizeY = False,
-                        )
+#                        maxY        = 100, 
+#                        minY        = 50,
+#                        autoResizeY = True,
+                        XScroll     = True,
+#                        running     = False
+                    )
 
-    ani = matplotlib.animation.FuncAnimation(fig, plotter.updateFig, interval=1, blit=True) 
     
