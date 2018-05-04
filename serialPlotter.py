@@ -155,6 +155,48 @@ class livePlot:
 
         return artists
 
+class intermedProcessing:
+    def __init__(self, updateData_cb, **kwargs):
+
+        defaults = {
+        }
+        
+        # Use kwargs if available, defaults if not given
+        for key in defaults:
+            self.__setattr__(key, kwargs.pop(key, defaults[key]))
+
+        # Warn if unexpected kwargs were given
+        for key in kwargs:
+            kwargWarn = 'kwarg "{} = {}" is unknown'.format(key, kwargs[key])
+            warnings.warn(kwargWarn)
+        
+        self.updateData_cb  = updateData_cb
+#        self.inNbr          = inNbr
+#        self.outNbr         = outNbr
+
+
+    def process(self):
+        dataIn = np.array(self.updateData_cb())
+#         print('dataIn')
+#         print(dataIn)
+        avLen = 100
+        filterResponse = np.array([1/avLen for _ in range(avLen)])
+        # print(filterResponse)
+        dataOut = np.array([np.convolve(data, filterResponse, mode = 'same') for data in dataIn[1:]])
+#        for i in range(filterResponse.size):
+#            dataOut[:,-i-1] = np.NaN
+#        dataOut = dataIn
+
+        print(dataIn.size)
+        print(dataOut.size)
+        print(dataOut[filterResponse.size:filterResponse.size+dataIn.size].size)
+#        output =  np.vstack([dataIn, dataOut[filterResponse.size:filterResponse.size+dataIn.size-1]])
+        output =  np.vstack([dataIn, dataOut])
+        print('output')
+#        print(output[:,-filterResponse.size])
+#        print(output.size)
+        return output
+
 
 def _blit_draw(self, artists, bg_cache):
     # Handles blitted drawing, which renders only the artists given instead
@@ -185,7 +227,7 @@ if __name__ == '__main__':
     print("Using matplotlib: " + matplotlib.__version__)
     print("Serial: " + serial.__version__)
 
-    #Hackish
+    #Hack the drawing method to allow blitting of objects outside the axes bbox
     matplotlib.animation.Animation._blit_draw = _blit_draw
 
 
@@ -193,21 +235,28 @@ if __name__ == '__main__':
     acquisition = serialAcq(
                             port            = '/dev/ttyACM3',
                             XChan           = False,
-                            bufferLength    = 700,
+                            replaceNaNs     = True,
+                            bufferLength    = 500,
                         )
     acquisition.updateData()
     
     
-    #Plot and run
+    # Processing
+
+    processor = intermedProcessing(acquisition.updateData)
+
+    # Plot and run
     fig, ax = plt.subplots()
     ax.grid(which='both')
-    plotter = livePlot(acquisition.updateData, fig, ax,
-                        windowSize  = 1500,
+    plotter = livePlot(processor.process, fig, ax,
+                        windowSize  = 500,
 #                        maxY        = 100, 
 #                        minY        = 50,
 #                        autoResizeY = True,
                         XScroll     = True,
-#                        running     = False
+#                        running     = False,
+                        nPlots      = 4,
+                        labels      = ['1', '2', 'f1', 'f2']
                     )
 
     
