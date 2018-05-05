@@ -102,7 +102,9 @@ class serialAcq:
 # callback list is 
 # given at init, each corresponding to a new subplot.
 #
+# TODO: Parametrize the plotters instantiated (via kwargs?)
 # TODO: Allow horizontal subplots/2D tiling
+# TODO: Allow shared x axis
 # TODO: Allow scrolling to be controlled
 ###################################################################################
 
@@ -112,7 +114,8 @@ class animator:
         self.fig, self.ax = plt.subplots(len(updateData_cb), 1)
         
         # Make it iterable no matter what, there must be a better way... TODO
-        self.ax = [self.ax]
+        if len(updateData_cb) == 1:
+            self.ax = [self.ax]
         self.plotters = [ livePlot(callback, ax,
                                         windowSize  = 500,
                 #                        maxY        = 100, 
@@ -176,9 +179,7 @@ class animator:
 ###################################################################################
 # Live plotter
 #
-# TODO: get animation outside of plotter, which should only update 
-#       data in the artists of its ax
-# TODO: Allow scrolling to be controlled (to be moved to animator class)
+# TODO: implement automatic number of plots
 ###################################################################################
 
 class livePlot:
@@ -262,8 +263,7 @@ class livePlot:
 
 ###################################################################################
 # Data Processor
-#
-# TODO: test! 
+# 
 ###################################################################################
 
 
@@ -275,13 +275,23 @@ class dataProcessor:
 
     def process(self):
         dataIn = np.array(self.updateData_cb())
+
+        print('dataIn.shape: {}'.format(dataIn.shape))
+        print('processFuncs len: {}'.format(len(self.processFuncs)))
         
-        output = [processor(dataIn) for processor in selfprocessFuncs] 
+        output = np.array([processor(data) for processor,data in zip(self.processFuncs, dataIn[1:])])
+        
+        print('output.shape: {}'.format(output.shape))
+        return np.vstack([dataIn[0], output])
 
-        return output
 
 
 
+
+# Simple running average for now
+def dataFilter(dataIn):
+    dataOut = np.convolve(dataIn, [1/2]*2, mode='same')
+    return dataOut
 
 
 
@@ -305,7 +315,7 @@ if __name__ == '__main__':
     
     # Processing
 
-#    processor = dataProcessor(acquisition.updateData, )
+    filtering = dataProcessor(acquisition.updateData, [dataFilter]*2 )
 
     # Animator
-    live = animator([acquisition.updateData])
+    live = animator([acquisition.updateData, filtering.process])
