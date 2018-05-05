@@ -9,12 +9,21 @@ import platform
 from collections import deque
 from itertools import chain
 
+
+
+###################################################################################
+# Serial acquisition
+#
+# TODO: implement X axis input functionnality (XY plots?)
+# TODO: make the serial reading more robust
+###################################################################################
+
+
+
+
 class serialAcq:
 
     def __init__(self, **kwargs):
-        
-        #TODO: Implement X axis input functionnality
-
         defaults = {
             'port'          : '/dev/ttyACM2',
             'baudrate'      : 9600,
@@ -69,13 +78,83 @@ class serialAcq:
         return self.buffers
 
 
-# Live plotter
-# TODO: allow scrolling to stop
+
+
+
+###################################################################################
+# Animator
 # 
+# Manages the figure and animation state. Holds the axes for each subplot and 
+# an associated plotter object to update various parts of it
+#
+# TODO: Allow multiple subplots
+# TODO: Allow scrolling to be controlled
+###################################################################################
+
+class animator:
+
+    def __init__(self, updateData_cb, **kwargs):
+
+        self.fig, self.ax = plt.subplots(1, 1)
+        
+        self.ax.grid(which='both')
+       
+        # Plot and run
+        self.plotter = livePlot(updateData_cb, self.ax,
+                            windowSize  = 500,
+    #                        maxY        = 100, 
+    #                        minY        = 50,
+    #                        autoResizeY = True,
+                            XScroll     = True,
+    #                        running     = False,
+                            nPlots      = 4,
+                            labels      = ['1', '2', 'f1', 'f2']
+                        )
+
+    
+        self.anim = matplotlib.animation.FuncAnimation(self.fig, self.plotter.updateFig, interval = 1/24, blit=True) 
+        #Hack the drawing method to allow blitting of objects outside the axes bbox
+        matplotlib.animation.Animation._blit_draw = self._blit_draw
+
+#        self.anim.event_source.stop()
+#        if not self.running:
+#            print('stop!')
+#            self.anim.event_source.stop()
+
+    # Redefinition of the drawing routine from Stack Overflow question "Animated Title in Matplotlib"
+    def _blit_draw(self, artists, bg_cache):
+        # Handles blitted drawing, which renders only the artists given instead
+        # of the entire figure.
+        updated_ax = []
+        for a in artists:
+            # If we haven't cached the background for this axes object, do
+            # so now. This might not always be reliable, but it's an attempt
+            # to automate the process.
+            if a.axes not in bg_cache:
+                bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.figure.bbox)
+            a.axes.draw_artist(a)
+            updated_ax.append(a.axes)
+
+        # After rendering all the needed artists, blit each axes individually.
+        for ax in set(updated_ax):
+            ax.figure.canvas.blit(ax.figure.bbox)
+
+
+
+
+
+
+###################################################################################
+# Live plotter
+#
+# TODO: get animation outside of plotter, which should only update 
+#       data in the artists of its ax
+# TODO: Allow scrolling to be controlled (to be moved to animator class)
+###################################################################################
 
 class livePlot:
 
-    def __init__(self, updateData_cb, fig, ax, **kwargs):
+    def __init__(self, updateData_cb, ax, **kwargs):
 
         defaults = {
             'windowSize'    : 500 ,
@@ -102,7 +181,6 @@ class livePlot:
 
         # Init plotting
         self.ax     = ax
-        self.fig    = fig
         self.maxX   = self.windowSize
         self.dataX  = [0]
         self.dataY  = [ [0] for _ in range(self.nPlots) ]
@@ -118,12 +196,6 @@ class livePlot:
 
         self.ax.legend().set_visible(self.showLegend)
         
-        self.anim = matplotlib.animation.FuncAnimation(self.fig, self.updateFig, interval = 1/24, blit=True) 
-#        self.anim.event_source.stop()
-#        if not self.running:
-#            print('stop!')
-#            self.anim.event_source.stop()
-
     
     def updateFig(self, frame = 0): #frame number given by matplotlib's animation, useless
         data = np.array(self.updateData_cb())
@@ -154,66 +226,29 @@ class livePlot:
             artists.append(self.ax.xaxis)
 
         return artists
-
-class intermedProcessing:
-    def __init__(self, updateData_cb, **kwargs):
-
-        defaults = {
-        }
         
-        # Use kwargs if available, defaults if not given
-        for key in defaults:
-            self.__setattr__(key, kwargs.pop(key, defaults[key]))
+   
 
-        # Warn if unexpected kwargs were given
-        for key in kwargs:
-            kwargWarn = 'kwarg "{} = {}" is unknown'.format(key, kwargs[key])
-            warnings.warn(kwargWarn)
-        
+
+
+###################################################################################
+# Data Processor
+#
+###################################################################################
+
+
+class dataProcessor:
+
+    def __init__(self, updateData_cb, processFuncs, **kwargs):
         self.updateData_cb  = updateData_cb
-#        self.inNbr          = inNbr
-#        self.outNbr         = outNbr
-
+        self.processFuncs    = processFuncs
 
     def process(self):
         dataIn = np.array(self.updateData_cb())
-#         print('dataIn')
-#         print(dataIn)
-        avLen = 100
-        filterResponse = np.array([1/avLen for _ in range(avLen)])
-        # print(filterResponse)
-        dataOut = np.array([np.convolve(data, filterResponse, mode = 'same') for data in dataIn[1:]])
-#        for i in range(filterResponse.size):
-#            dataOut[:,-i-1] = np.NaN
-#        dataOut = dataIn
+        
+        output = [processor(dataIn) for processor in selfprocessFuncs] 
 
-        print(dataIn.size)
-        print(dataOut.size)
-        print(dataOut[filterResponse.size:filterResponse.size+dataIn.size].size)
-#        output =  np.vstack([dataIn, dataOut[filterResponse.size:filterResponse.size+dataIn.size-1]])
-        output =  np.vstack([dataIn, dataOut])
-        print('output')
-#        print(output[:,-filterResponse.size])
-#        print(output.size)
         return output
-
-
-def _blit_draw(self, artists, bg_cache):
-    # Handles blitted drawing, which renders only the artists given instead
-    # of the entire figure.
-    updated_ax = []
-    for a in artists:
-        # If we haven't cached the background for this axes object, do
-        # so now. This might not always be reliable, but it's an attempt
-        # to automate the process.
-        if a.axes not in bg_cache:
-            bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.figure.bbox)
-        a.axes.draw_artist(a)
-        updated_ax.append(a.axes)
-
-    # After rendering all the needed artists, blit each axes individually.
-    for ax in set(updated_ax):
-        ax.figure.canvas.blit(ax.figure.bbox)
 
 
 
@@ -227,13 +262,10 @@ if __name__ == '__main__':
     print("Using matplotlib: " + matplotlib.__version__)
     print("Serial: " + serial.__version__)
 
-    #Hack the drawing method to allow blitting of objects outside the axes bbox
-    matplotlib.animation.Animation._blit_draw = _blit_draw
-
 
     # Serial
     acquisition = serialAcq(
-                            port            = '/dev/ttyACM3',
+                            port            = '/dev/ttyACM5',
                             XChan           = False,
                             replaceNaNs     = True,
                             bufferLength    = 500,
@@ -243,20 +275,7 @@ if __name__ == '__main__':
     
     # Processing
 
-    processor = intermedProcessing(acquisition.updateData)
+#    processor = dataProcessor(acquisition.updateData, )
 
-    # Plot and run
-    fig, ax = plt.subplots()
-    ax.grid(which='both')
-    plotter = livePlot(processor.process, fig, ax,
-                        windowSize  = 500,
-#                        maxY        = 100, 
-#                        minY        = 50,
-#                        autoResizeY = True,
-                        XScroll     = True,
-#                        running     = False,
-                        nPlots      = 4,
-                        labels      = ['1', '2', 'f1', 'f2']
-                    )
-
-    
+    # Animator
+    live = animator(acquisition.updateData)
