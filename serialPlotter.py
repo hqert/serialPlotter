@@ -8,10 +8,13 @@
 # Developped for the 2018 LiT competition, but with flexibility in mind
 #
 #
+# TODO: Better X axis implementation, as of now it is always passed around
+# TODO: implement numerical value output
 # 2018.05.05 - Loïs Bosson
 #
 ###################################################################################
 ###################################################################################
+
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -23,16 +26,17 @@ import time
 import platform
 from collections import deque
 from itertools import chain
+import warnings
+
 
 
 
 ###################################################################################
 # Serial acquisition
 #
-# TODO: implement X axis input functionnality (XY plots?)
+# TODO: test XY mode
 # TODO: make the serial reading more robust
 ###################################################################################
-
 
 class serialAcq:
 
@@ -55,7 +59,6 @@ class serialAcq:
         for key in kwargs:
             kwargWarn = 'kwarg "{} = {}" is unknown'.format(key, kwargs[key])
             warnings.warn(kwargWarn)
-        
 
         # Define buffers and X channel (buffer[0])
         self.buffers = [ deque([0] *self.bufferLength, maxlen=self.bufferLength) 
@@ -126,14 +129,10 @@ class animator:
         matplotlib.animation.Animation._blit_draw = self._blit_draw
 
 
-
-
-
 #    def stopAnimation(self):
 #        if not self.running:
 #            print('stop!')
 #            self.anim.event_source.stop()
-
 
 
     def updateAxes(self, frame = 0): 
@@ -142,7 +141,6 @@ class animator:
             for plotArtist in updater(frame):
                 artists.append(plotArtist)
         return artists
-
 
 
     # Redefinition of the drawing routine from Stack Overflow question "Animated Title in Matplotlib"
@@ -165,29 +163,33 @@ class animator:
 
 
 
-
-
-
 ###################################################################################
 # Live plotter
 #
-# TODO: implement automatic number of plots
+# For a line to be visible, it MUST have a legend entry, even if empty!
+# The updateData_cb callback must provide the X axis as first array in list
+# There may be more legend entries than arrays returned by the updater callback
+#
+# TODO: implement automatic number of lines
+# TODO: switch to something else than matplotlib, the thing is terribly slow
+#       and glitchy with scrolling axes hack
+# 
 ###################################################################################
 
 class livePlot:
+
 
     def __init__(self, updateData_cb, ax, **kwargs):
 
         defaults = {
             'windowSize'    : 500 ,
-            'nPlots'        : 2,
             'showLegend'    : True,
             'labels'        : ['poney 1', 'poney 2'],
             'autoResizeY'   : False,
             'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
-#            'running'       : False,
+            'title'         : '',
         }
         
         # Use kwargs if available, defaults if not given
@@ -203,12 +205,12 @@ class livePlot:
 
         # Init plotting
         self.ax     = ax
+        self.ax.set_title(self.title)
         self.maxX   = self.windowSize
         self.dataX  = [0]
-        self.dataY  = [ [0] for _ in range(self.nPlots) ]
+        self.dataY  = [ [0] for _ in range(len(self.labels)) ]
         
-        #TODO make label length not matter
-        self.lines = []
+        self.lines  = []
         for Y, legend in zip(self.dataY, self.labels):
             line = ax.plot(self.dataX, Y, label=legend)  # Returns a list of only one Line2D
             self.lines.append(line[0])
@@ -219,15 +221,13 @@ class livePlot:
         self.ax.legend().set_visible(self.showLegend)
         
     
-    def updateFig(self, frame = 0): #frame number given by matplotlib's animation, useless
+    def updateFig(self, frame = 0): #frame number given by matplotlib's animation, useless here
         data = np.array(self.updateData_cb())
-#        print(data)
         self.dataX = data[0]
         self.dataY = data[1:]
         for line, Y in zip(self.lines, self.dataY):
             line.set_data(self.dataX, Y)
-        
-        
+         
         # Default artists to be updated
         artists = []
         for a in self.lines:
@@ -261,9 +261,10 @@ class livePlot:
 
 class dataProcessor:
 
-    def __init__(self, updateData_cb, processFuncs, **kwargs):
+    def __init__(self, updateData_cb, processFuncs, outputRaw=False):
         self.updateData_cb  = updateData_cb
-        self.processFuncs    = processFuncs
+        self.processFuncs   = processFuncs
+        self.outputRaw      = outputRaw
 
     def process(self):
         dataIn = np.array(self.updateData_cb())
@@ -273,19 +274,17 @@ class dataProcessor:
         
         output = np.array([processor(data) for processor,data in zip(self.processFuncs, dataIn[1:])])
         
+       
+#        print('currentValue: {}'.format((output[:, -400-1])))
+
+       
 #         print('output.shape: {}'.format(output.shape))
-        return np.vstack([dataIn[0], output])
+        if self.outputRaw:
+            a = dataIn
+        else:
+            a = dataIn[0]
 
-
-
-
-
-# Simple running average for now
-def dataFilter(dataIn):
-    dataOut = np.convolve(dataIn, [1/5]*5, mode='same')
-    return dataOut
-
-
+        return np.vstack([a, output])
 
 
 
@@ -294,6 +293,22 @@ def dataFilter(dataIn):
 # Test case
 # 
 ###################################################################################
+
+
+
+
+# Simple running average for now
+def dataFilter(dataIn):
+#    dataOut = np.convolve(dataIn, [1/5]*5, mode='same')
+    dataOut = [np.NaN for _ in range(len(dataIn))] # Init the array
+    averageLen = 100
+    for i in range(len(dataOut) - averageLen):
+        dataOut[i] = dataIn[i: i+averageLen].sum() / averageLen
+    
+    return dataOut
+
+
+
 
 
 if __name__ == '__main__':
@@ -305,7 +320,7 @@ if __name__ == '__main__':
 
     # Serial
     acquisition = serialAcq(
-                            port            = '/dev/ttyACM3',
+                            port            = '/dev/ttyACM4',
                             XChan           = False,
                             replaceNaNs     = True,
                             bufferLength    = 500,
@@ -315,32 +330,33 @@ if __name__ == '__main__':
     
     # Processing
 
-    filtering = dataProcessor(acquisition.updateData, [dataFilter]*2 )
+    filtering = dataProcessor(
+            acquisition.updateData,
+            [dataFilter]*2,
+            outputRaw = True)
 
     # Animator
     live = animator([
        {
             'dataUpdate_cb' : acquisition.updateData,
             'windowSize'    : 500,
-            'nPlots'        : 2,
-            'showLegend'    : True,
-            'labels'        : ['poney 1', 'poney 2'],
-            'autoResizeY'   : False,
+            'showLegend'    : False,
+            'labels'        : ['Poney 1', 'Poney 2'],
+            'autoResizeY'   : True,
             'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
-#            'running'       : False,
+            'title'         :'Raw data',
             },
         {
             'dataUpdate_cb' : filtering.process,
             'windowSize'    : 500,
-            'nPlots'        : 2,
             'showLegend'    : True,
-            'labels'        : ['Cheval 1', 'Cheval 2'],
+            'labels'        : ['Poney 1', 'Poney 2', 'Cheval 1', 'Cheval 2'],
             'autoResizeY'   : False,
             'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
-#            'running'       : False,
+            'title'         : 'Filtered data',
             }
         ])
