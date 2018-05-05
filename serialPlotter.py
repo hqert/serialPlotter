@@ -1,3 +1,18 @@
+
+###################################################################################
+###################################################################################
+#
+# Serial plotter module, actually comprises of a few different modules that should 
+# probably be separated into different files.
+#
+# Developped for the 2018 LiT competition, but with flexibility in mind
+#
+#
+# 2018.05.05 - Loïs Bosson
+#
+###################################################################################
+###################################################################################
+
 import matplotlib.pyplot as plt
 import matplotlib
 #import matplotlib.animation as animation
@@ -17,8 +32,6 @@ from itertools import chain
 # TODO: implement X axis input functionnality (XY plots?)
 # TODO: make the serial reading more robust
 ###################################################################################
-
-
 
 
 class serialAcq:
@@ -85,41 +98,57 @@ class serialAcq:
 # Animator
 # 
 # Manages the figure and animation state. Holds the axes for each subplot and 
-# an associated plotter object to update various parts of it
+# an associated plotter object to update various parts of it. TODO: Formulation/check
+# callback list is 
+# given at init, each corresponding to a new subplot.
 #
-# TODO: Allow multiple subplots
+# TODO: Allow horizontal subplots/2D tiling
 # TODO: Allow scrolling to be controlled
 ###################################################################################
 
 class animator:
 
     def __init__(self, updateData_cb, **kwargs):
-
-        self.fig, self.ax = plt.subplots(1, 1)
+        self.fig, self.ax = plt.subplots(len(updateData_cb), 1)
         
-        self.ax.grid(which='both')
-       
-        # Plot and run
-        self.plotter = livePlot(updateData_cb, self.ax,
-                            windowSize  = 500,
-    #                        maxY        = 100, 
-    #                        minY        = 50,
-    #                        autoResizeY = True,
-                            XScroll     = True,
-    #                        running     = False,
-                            nPlots      = 4,
-                            labels      = ['1', '2', 'f1', 'f2']
-                        )
-
-    
-        self.anim = matplotlib.animation.FuncAnimation(self.fig, self.plotter.updateFig, interval = 1/24, blit=True) 
+        # Make it iterable no matter what, there must be a better way... TODO
+        self.ax = [self.ax]
+        self.plotters = [ livePlot(callback, ax,
+                                        windowSize  = 500,
+                #                        maxY        = 100, 
+                #                        minY        = 50,
+                #                        autoResizeY = True,
+                                        XScroll     = True,
+                #                        running     = False,
+                                        nPlots      = 4,
+                                        labels      = ['1', '2', 'f1', 'f2']
+                                    ) for callback, ax in zip(updateData_cb, self.ax)]
+ 
+        
+        self.updaters = [plotter.updateFig for plotter in self.plotters]
+        self.anim = matplotlib.animation.FuncAnimation(self.fig, self.updateAxes, interval = 1/24, blit=True) 
         #Hack the drawing method to allow blitting of objects outside the axes bbox
         matplotlib.animation.Animation._blit_draw = self._blit_draw
 
-#        self.anim.event_source.stop()
+
+
+
+
+#    def stopAnimation(self):
 #        if not self.running:
 #            print('stop!')
 #            self.anim.event_source.stop()
+
+
+
+    def updateAxes(self, frame = 0): 
+        artists = []
+        for updater in self.updaters:
+            for plotArtist in updater(frame):
+                artists.append(plotArtist)
+        return artists
+
+
 
     # Redefinition of the drawing routine from Stack Overflow question "Animated Title in Matplotlib"
     def _blit_draw(self, artists, bg_cache):
@@ -234,6 +263,7 @@ class livePlot:
 ###################################################################################
 # Data Processor
 #
+# TODO: test! 
 ###################################################################################
 
 
@@ -265,7 +295,7 @@ if __name__ == '__main__':
 
     # Serial
     acquisition = serialAcq(
-                            port            = '/dev/ttyACM5',
+                            port            = '/dev/ttyACM3',
                             XChan           = False,
                             replaceNaNs     = True,
                             bufferLength    = 500,
@@ -278,4 +308,4 @@ if __name__ == '__main__':
 #    processor = dataProcessor(acquisition.updateData, )
 
     # Animator
-    live = animator(acquisition.updateData)
+    live = animator([acquisition.updateData])
