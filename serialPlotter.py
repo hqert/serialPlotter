@@ -110,22 +110,14 @@ class serialAcq:
 
 class animator:
 
-    def __init__(self, updateData_cb, **kwargs):
-        self.fig, self.ax = plt.subplots(len(updateData_cb), 1)
+    def __init__(self, plotterDictList, **kwargs):
+        self.fig, self.ax = plt.subplots(len(plotterDictList), 1)
         
         # Make it iterable no matter what, there must be a better way... TODO
-        if len(updateData_cb) == 1:
+        if len(plotterDictList) == 1:
             self.ax = [self.ax]
-        self.plotters = [ livePlot(callback, ax,
-                                        windowSize  = 500,
-                #                        maxY        = 100, 
-                #                        minY        = 50,
-                #                        autoResizeY = True,
-                                        XScroll     = True,
-                #                        running     = False,
-                                        nPlots      = 4,
-                                        labels      = ['1', '2', 'f1', 'f2']
-                                    ) for callback, ax in zip(updateData_cb, self.ax)]
+        self.plotters = [ livePlot(plotterDict.pop('dataUpdate_cb'), ax, **plotterDict ) 
+                for plotterDict, ax in zip(plotterDictList, self.ax)]
  
         
         self.updaters = [plotter.updateFig for plotter in self.plotters]
@@ -276,12 +268,12 @@ class dataProcessor:
     def process(self):
         dataIn = np.array(self.updateData_cb())
 
-        print('dataIn.shape: {}'.format(dataIn.shape))
-        print('processFuncs len: {}'.format(len(self.processFuncs)))
+#        print('dataIn.shape: {}'.format(dataIn.shape))
+#        print('processFuncs len: {}'.format(len(self.processFuncs)))
         
         output = np.array([processor(data) for processor,data in zip(self.processFuncs, dataIn[1:])])
         
-        print('output.shape: {}'.format(output.shape))
+#         print('output.shape: {}'.format(output.shape))
         return np.vstack([dataIn[0], output])
 
 
@@ -290,12 +282,20 @@ class dataProcessor:
 
 # Simple running average for now
 def dataFilter(dataIn):
-    dataOut = np.convolve(dataIn, [1/2]*2, mode='same')
+    dataOut = np.convolve(dataIn, [1/5]*5, mode='same')
     return dataOut
 
 
 
-# Test 
+
+
+
+###################################################################################
+# Test case
+# 
+###################################################################################
+
+
 if __name__ == '__main__':
     print("Using python: " + platform.python_version())
     print("Using numpy: " + np.__version__)
@@ -318,4 +318,29 @@ if __name__ == '__main__':
     filtering = dataProcessor(acquisition.updateData, [dataFilter]*2 )
 
     # Animator
-    live = animator([acquisition.updateData, filtering.process])
+    live = animator([
+       {
+            'dataUpdate_cb' : acquisition.updateData,
+            'windowSize'    : 500,
+            'nPlots'        : 2,
+            'showLegend'    : True,
+            'labels'        : ['poney 1', 'poney 2'],
+            'autoResizeY'   : False,
+            'XScroll'       : True,
+            'minY'          : -20,
+            'maxY'          : 500,
+#            'running'       : False,
+            },
+        {
+            'dataUpdate_cb' : filtering.process,
+            'windowSize'    : 500,
+            'nPlots'        : 2,
+            'showLegend'    : True,
+            'labels'        : ['Cheval 1', 'Cheval 2'],
+            'autoResizeY'   : False,
+            'XScroll'       : True,
+            'minY'          : -20,
+            'maxY'          : 500,
+#            'running'       : False,
+            }
+        ])
