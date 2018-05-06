@@ -218,7 +218,7 @@ class livePlot:
         self.ax.set_xlim(0, self.windowSize)
         self.ax.set_ylim(self.minY, self.maxY) # Will be resized later if needed
 
-        self.ax.legend().set_visible(self.showLegend)
+        self.ax.legend(loc='upper left', bbox_to_anchor=(1, 1)).set_visible(self.showLegend)
         
     
     def updateFig(self, frame = 0): #frame number given by matplotlib's animation, useless here
