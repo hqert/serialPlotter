@@ -18,6 +18,7 @@
 
 import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.animation
 #import matplotlib.animation as animation
 import numpy as np
 from io import BytesIO
@@ -75,7 +76,7 @@ class serialAcq:
             line = self.SPort.readline() 
             #TODO maybe add option for input format?
             data = np.genfromtxt(BytesIO(line), dtype = float)
-            
+            #print("line = {}\tdatain: {}".format(line, data))
             #check we have a complete line, else replace entries with NaNs
             #TODO: wait for a line to be complete instead
             if data.size != self.channelNbr:
@@ -83,7 +84,7 @@ class serialAcq:
 
             if self.replaceNaNs:
                 data = [0 if np.isnan(i) else i for i in data]
-            
+            #print("data out: {}".format(data)) 
             # Update buffers
             for new,buf in zip(data, self.buffers[int(not self.XChan):]):
                 buf.append(new)
@@ -301,11 +302,12 @@ class dataProcessor:
 def dataFilter(dataIn):
 #    dataOut = np.convolve(dataIn, [1/5]*5, mode='same')
     dataOut = [np.NaN for _ in range(len(dataIn))] # Init the array
-    averageLen = 100
+    averageLen = 300
     for i in range(len(dataOut) - averageLen):
         dataOut[i] = dataIn[i: i+averageLen].sum() / averageLen
     
-    return dataOut
+    print("Temperature: {}".format(dataOut[-averageLen-1]))
+    return  dataOut
 
 
 
@@ -320,10 +322,11 @@ if __name__ == '__main__':
 
     # Serial
     acquisition = serialAcq(
-                            port            = '/dev/ttyACM4',
+                            port            = '/dev/ttyACM0',
                             XChan           = False,
                             replaceNaNs     = True,
                             bufferLength    = 500,
+                            channelNbr      = 2,
                         )
     acquisition.updateData()
     
@@ -340,23 +343,24 @@ if __name__ == '__main__':
        {
             'dataUpdate_cb' : acquisition.updateData,
             'windowSize'    : 500,
-            'showLegend'    : False,
-            'labels'        : ['Poney 1', 'Poney 2'],
-            'autoResizeY'   : True,
+            'showLegend'    : True,
+            'labels'        : ['Measured', 'dummy'],
+            'autoResizeY'   : False,
             'XScroll'       : True,
-            'minY'          : -20,
-            'maxY'          : 500,
+            'minY'          : 300,
+            'maxY'          : 600,
             'title'         :'Raw data',
             },
         {
             'dataUpdate_cb' : filtering.process,
             'windowSize'    : 500,
             'showLegend'    : True,
-            'labels'        : ['Poney 1', 'Poney 2', 'Cheval 1', 'Cheval 2'],
+            'labels'        : ['Raw', 'Filtered', 'Raw', 'Filtered'],
             'autoResizeY'   : False,
             'XScroll'       : True,
-            'minY'          : -20,
-            'maxY'          : 500,
+            'minY'          : 300,
+            'maxY'          : 600,
             'title'         : 'Filtered data',
             }
         ])
+    plt.show()
