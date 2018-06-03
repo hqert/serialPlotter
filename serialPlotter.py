@@ -97,7 +97,7 @@ class serialAcq:
 
 
 ###################################################################################
-# Animator
+# mainWindow
 # 
 #
 # TODO: Parametrize the plotters instantiated (via kwargs?)
@@ -106,7 +106,7 @@ class serialAcq:
 # TODO: Allow scrolling to be controlled
 ###################################################################################
 
-class animator:
+class mainWindow:
 
     def __init__(self, plotterDictList, title='Serial plotter',  **kwargs):
         #QtGui.QApplication.setGraphicsSystem('raster')
@@ -170,13 +170,18 @@ class livePlot:
             'windowSize'    : 500,
             'showLegend'    : True,
             'labels'        : ['poney 1', 'poney 2'],
-            'autoResizeY'   : False,
-            'XScroll'       : True,
+#            'autoResizeY'   : False,
+#            'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
+            'XLabel'        : 'Time',
+            'XUnits'        : 's',
+            'YLabel'        : '',
+            'YUnits'        : '',
             'title'         : '',
+            'textOffset'    : 0,
         }
-        print(yPos) 
+
         # Use kwargs if available, defaults if not given
         for key in defaults:
             self.__setattr__(key, kwargs.pop(key, defaults[key]))
@@ -193,21 +198,28 @@ class livePlot:
         self.label = QtGui.QLabel('test {}'.format(yPos))
         self.label.setMinimumWidth(200)
         grid.addWidget(self.label, yPos, 1)
-        pw1.setTitle(self.title);
-        pw1.setLabel('left', 'Value', units='V')
-        pw1.setLabel('bottom', 'Time', units='s')
-        pw1.setXRange(0, self.windowSize)
-        pw1.setYRange(-10, 300)
-        
-        nplots = len(self.labels)
-        self.plots = [pw1.plot(pen=(i, nplots*1.3), name = label) for i, label in zip(range(nplots), self.labels)]
+        pw1.setTitle(self.title)
+        pw1.setLabel('left', self.YLabel, units=self.YUnits)
+        pw1.setLabel('bottom', self.XLabel, units=self.XUnits)
+        pw1.setXRange(-self.windowSize, 0)
+        pw1.setYRange(self.minY, self.maxY)
+        pw1.showGrid(x=True, y=True, alpha=1)
+        samplingPos = pg.InfiniteLine(angle=90, pos = -self.textOffset)
+        pw1.addItem(samplingPos)
 
+        if self.showLegend:
+            pw1.addLegend()
+
+        #create empty plots with the right parameters
+        nplots = len(self.labels)
+        self.plots = [pw1.plot(pen=(i, nplots*1.3), name = label) 
+                for i, label in zip(range(nplots), self.labels)]
     def update(self):
         data = np.array(self.updateData_cb())
         labelText = ''
         for (plot, yData, label) in zip(self.plots, data[1:], self.labels):
-            plot.setData( y = yData)
-            labelText +=('{}: {}'.format(label, yData[-1]))
+            plot.setData( x= np.array(range(-self.windowSize, 0)), y = yData)
+            labelText +=('{}: {: 4.2f}'.format(label, yData[-self.textOffset-1]))
             labelText += '\n'
         self.label.setText(labelText)
 
@@ -261,7 +273,7 @@ class dataProcessor:
 def dataFilter(dataIn):
 #    dataOut = np.convolve(dataIn, [1/5]*5, mode='same')
     dataOut = [np.NaN for _ in range(len(dataIn))] # Init the array
-    averageLen = 200
+    averageLen = 300
     for i in range(len(dataOut) - averageLen):
         dataOut[i] = dataIn[i: i+averageLen].sum() / averageLen
     
@@ -295,39 +307,46 @@ if __name__ == '__main__':
             [dataFilter]*2,
             outputRaw = False)
  
-    # Animator
-    live = animator([
+    # mainWindow
+    live = mainWindow([
        {
             'dataUpdate_cb' : acquisition.updateData,
             'windowSize'    : 500,
             'showLegend'    : False,
-            'labels'        : ['Poney 1', 'Poney 2'],
-            'autoResizeY'   : True,
-            'XScroll'       : True,
+            'labels'        : ['Upstream', 'Downstream'],
+#            'autoResizeY'   : True,
+#            'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
+            'YLabel'        : '',
             'title'         :'Raw data',
             },
         {
             'dataUpdate_cb' : filtering.process,
             'windowSize'    : 500,
             'showLegend'    : True,
-            'labels'        : ['Poney 1', 'Poney 2', 'Cheval 1', 'Cheval 2'],
-            'autoResizeY'   : False,
-            'XScroll'       : True,
+            'labels'        : ['Upstream', 'Downstream'],
+#            'autoResizeY'   : False,
+#            'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
-            'title'         : 'Filtered data',
+            'YLabel'        : 'Temperature',
+            'YUnits'        : '°C',
+            'title'         : 'Temperature',
+            'textOffset'    : 300,
             },
         {
             'dataUpdate_cb' : filtering.process,
             'windowSize'    : 500,
             'showLegend'    : True,
-            'labels'        : ['Poney 1', 'Poney 2', 'Cheval 1', 'Cheval 2'],
-            'autoResizeY'   : False,
-            'XScroll'       : True,
+            'labels'        : ['Flow'],
+#            'autoResizeY'   : False,
+#            'XScroll'       : True,
             'minY'          : -20,
             'maxY'          : 500,
+            'YLabel'        : 'Water flow',
+            'YUnits'        : 'mL/s',
             'title'         : 'Flow',
+            'textOffset'    : 300,
             }
         ], title='Lit 2018 - Team 1')
