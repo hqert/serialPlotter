@@ -221,7 +221,7 @@ class livePlot:
         data = np.array(self.updateData_cb())
         labelText = ''
         for (plot, yData, label) in zip(self.plots, data[1:], self.labels):
-            plot.setData( x= np.array(range(-self.windowSize, 0)), y = yData)
+            plot.setData( x= np.array(range(-len(yData), 0)), y = yData)
             labelText +=('{}: {: 4.2f}'.format(label, yData[-self.textOffset-1]))
             labelText += '\n'
         self.label.setText(labelText)
@@ -331,7 +331,7 @@ def filterTemps(dataIn):
     gains    = [50e3, 50e3]
     dataOut = np.array([[sample2T(sample, gain) for sample in channel] for channel, gain in zip(dataIn[0:2], gains)])
     # Filter the two channels
-    #dataOut = np.array([runningAvg(channel) for channel in dataOut])
+    dataOut = np.array([runningAvg(channel) for channel in dataOut])
     mean    = dataOut.mean(0) #average the two channels)
     dataOut = np.vstack([dataOut, mean])
     
@@ -339,11 +339,8 @@ def filterTemps(dataIn):
 
 
 def filterFlow(dataIn):
-    deltaT = [sample2T(sample, 50000) for sample in dataIn[2]]
-     
-    print (deltaT) 
+    deltaT = runningAvg([sample2T(sample, 50000)-25 for sample in dataIn[2]])
     dataOut = [np.exp((dT + 1.5)/(-0.205))*1e6 for dT in deltaT] 
-    print (dataOut) 
     return dataOut 
 
 if __name__ == '__main__':
@@ -358,7 +355,7 @@ if __name__ == '__main__':
                             port            = '/dev/ttyACM0',
                             XChan           = False,
                             replaceNaNs     = True,
-                            bufferLength    = 500,
+                            bufferLength    = 900,
                             channelNbr      = 3,
                         )
     acquisition.updateData()
