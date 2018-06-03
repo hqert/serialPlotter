@@ -120,9 +120,7 @@ class animator:
         cw.setLayout(grid)
         mw.show()
         
-        # Make it iterable no matter what, there must be a better way... TODO
-        if len(plotterDictList) == 1:
-            self.ax = [self.ax]
+        # create an array of plotters
         self.plotters = [ livePlot(plotterDict.pop('dataUpdate_cb'), grid, yPos, **plotterDict ) 
                 for plotterDict, yPos in zip(plotterDictList, range(len(plotterDictList)))]
 
@@ -192,22 +190,26 @@ class livePlot:
 
         pw1 = pg.PlotWidget()
         grid.addWidget(pw1, yPos, 0)
-        raw1 = QtGui.QLabel('test {}'.format(yPos))
-        raw1.setMinimumWidth(200)
-        grid.addWidget(raw1, yPos, 1)
-        p1 = pw1.plot([1, 2, 3, 4, 5, 4, 6, 7, 2, 8])
+        self.label = QtGui.QLabel('test {}'.format(yPos))
+        self.label.setMinimumWidth(200)
+        grid.addWidget(self.label, yPos, 1)
         pw1.setTitle(self.title);
         pw1.setLabel('left', 'Value', units='V')
         pw1.setLabel('bottom', 'Time', units='s')
         pw1.setXRange(0, self.windowSize)
         pw1.setYRange(-10, 300)
-        self.p1 = p1
+        
+        nplots = len(self.labels)
+        self.plots = [pw1.plot(pen=(i, nplots*1.3), name = label) for i, label in zip(range(nplots), self.labels)]
 
     def update(self):
-        print('updating')
         data = np.array(self.updateData_cb())
-        self.p1.setData( y = data[1])
-
+        labelText = ''
+        for (plot, yData, label) in zip(self.plots, data[1:], self.labels):
+            plot.setData( y = yData)
+            labelText +=('{}: {}'.format(label, yData[-1]))
+            labelText += '\n'
+        self.label.setText(labelText)
 
 
 
