@@ -158,6 +158,9 @@ class mainWindow:
 # There may be more legend entries than arrays returned by the updater callback
 #
 # TODO: implement automatic number of lines
+# TODO: implement autoresizing of Y
+# TODO: implement X scrolling instead of sowing negative time
+# TODO: implement sample to second conversion
 # 
 ###################################################################################
 
@@ -175,7 +178,7 @@ class livePlot:
             'minY'          : -20,
             'maxY'          : 500,
             'XLabel'        : 'Time',
-            'XUnits'        : 's',
+            'XUnits'        : 'samples',
             'YLabel'        : '',
             'YUnits'        : '',
             'title'         : '',
@@ -233,9 +236,9 @@ class livePlot:
 
 class dataProcessor:
 
-    def __init__(self, updateData_cb, processFuncs, outputRaw=False):
+    def __init__(self, updateData_cb, processFunc, outputRaw=False):
         self.updateData_cb  = updateData_cb
-        self.processFuncs   = processFuncs
+        self.processFunc    = processFunc
         self.outputRaw      = outputRaw
 
     def process(self):
@@ -244,8 +247,7 @@ class dataProcessor:
 #        print('dataIn.shape: {}'.format(dataIn.shape))
 #        print('processFuncs len: {}'.format(len(self.processFuncs)))
         
-        output = np.array([processor(data) for processor,data in zip(self.processFuncs, dataIn[1:])])
-        
+        output = np.array(self.processFunc(dataIn[1:]))
        
 #        print('currentValue: {}'.format((output[:, -400-1])))
 
@@ -260,6 +262,35 @@ class dataProcessor:
 
 
 
+#class dataProcessor:
+#
+#    def __init__(self, updateData_cb, processFuncs, outputRaw=False):
+#        self.updateData_cb  = updateData_cb
+#        self.processFuncs   = processFuncs
+#        self.outputRaw      = outputRaw
+#
+#    def process(self):
+#        dataIn = np.array(self.updateData_cb())
+#
+##        print('dataIn.shape: {}'.format(dataIn.shape))
+##        print('processFuncs len: {}'.format(len(self.processFuncs)))
+#        
+#        output = np.array([processor(data) for processor,data in zip(self.processFuncs, dataIn[1:])])
+#        
+#       
+##        print('currentValue: {}'.format((output[:, -400-1])))
+#
+#       
+##         print('output.shape: {}'.format(output.shape))
+#        if self.outputRaw:
+#            a = dataIn
+#        else:
+#            a = dataIn[0]
+#
+#        return np.vstack([a, output])
+#
+
+
 
 ###################################################################################
 # Test case
@@ -270,18 +301,50 @@ class dataProcessor:
 
 
 # Simple running average for now
-def dataFilter(dataIn):
+def runningAvg(dataIn):
 #    dataOut = np.convolve(dataIn, [1/5]*5, mode='same')
+    dataIn = np.array(dataIn)
     dataOut = [np.NaN for _ in range(len(dataIn))] # Init the array
     averageLen = 300
-    for i in range(len(dataOut) - averageLen):
-        dataOut[i] = dataIn[i: i+averageLen].sum() / averageLen
+    for i in range(averageLen, len(dataOut)):
+        dataOut[i] = dataIn[i-averageLen: i].sum() / averageLen
     
     return dataOut
 
 
+def sample2T(sample, gain):
+    #sample in ADC range
+    #output in degree Celsius
+    #constants for conversion to degrees
+    T0      = 25
+    R0      = 500 # RTD value à T0, approximated
+    V_ref   = 5
+    maxBit  = 1023
+    V_in    = 0.0061
+    alpha   = 0.0023
+
+    return T0 - 4*sample*V_ref/maxBit/(alpha*(sample*V_ref/maxBit - gain*V_in))
 
 
+def filterTemps(dataIn):
+            
+    gains    = [50e3, 50e3]
+    dataOut = np.array([[sample2T(sample, gain) for sample in channel] for channel, gain in zip(dataIn[0:2], gains)])
+    # Filter the two channels
+    #dataOut = np.array([runningAvg(channel) for channel in dataOut])
+    mean    = dataOut.mean(0) #average the two channels)
+    dataOut = np.vstack([dataOut, mean])
+    
+    return dataOut
+
+
+def filterFlow(dataIn):
+    deltaT = [sample2T(sample, 50000) for sample in dataIn[2]]
+     
+    print (deltaT) 
+    dataOut = [np.exp((dT + 1.5)/(-0.205))*1e6 for dT in deltaT] 
+    print (dataOut) 
+    return dataOut 
 
 if __name__ == '__main__':
     print("Using python: " + platform.python_version())
@@ -296,24 +359,31 @@ if __name__ == '__main__':
                             XChan           = False,
                             replaceNaNs     = True,
                             bufferLength    = 500,
+                            channelNbr      = 3,
                         )
     acquisition.updateData()
      
      
     # Processing
 
-    filtering = dataProcessor(
+    getTemps = dataProcessor(
             acquisition.updateData,
-            [dataFilter]*2,
+            filterTemps,
+            outputRaw = False)
+
+    getFlow  = dataProcessor(
+            acquisition.updateData,
+            filterFlow,
             outputRaw = False)
  
+
     # mainWindow
     live = mainWindow([
        {
             'dataUpdate_cb' : acquisition.updateData,
             'windowSize'    : 500,
             'showLegend'    : False,
-            'labels'        : ['Upstream', 'Downstream'],
+            'labels'        : ['Upstream', 'Downstream', 'Difference'],
 #            'autoResizeY'   : True,
 #            'XScroll'       : True,
             'minY'          : -20,
@@ -322,31 +392,31 @@ if __name__ == '__main__':
             'title'         :'Raw data',
             },
         {
-            'dataUpdate_cb' : filtering.process,
+            'dataUpdate_cb' : getTemps.process,
             'windowSize'    : 500,
             'showLegend'    : True,
-            'labels'        : ['Upstream', 'Downstream'],
+            'labels'        : ['Upstream', 'Downstream', 'Average'],
 #            'autoResizeY'   : False,
 #            'XScroll'       : True,
-            'minY'          : -20,
-            'maxY'          : 500,
+            'minY'          : 20,
+            'maxY'          : 50,
             'YLabel'        : 'Temperature',
             'YUnits'        : '°C',
             'title'         : 'Temperature',
-            'textOffset'    : 300,
+            'textOffset'    : 000,
             },
         {
-            'dataUpdate_cb' : filtering.process,
+            'dataUpdate_cb' : getFlow.process,
             'windowSize'    : 500,
             'showLegend'    : True,
             'labels'        : ['Flow'],
 #            'autoResizeY'   : False,
 #            'XScroll'       : True,
-            'minY'          : -20,
-            'maxY'          : 500,
+            'minY'          : 0,
+            'maxY'          : 100,
             'YLabel'        : 'Water flow',
             'YUnits'        : 'mL/s',
             'title'         : 'Flow',
-            'textOffset'    : 300,
+            'textOffset'    : 000,
             }
         ], title='Lit 2018 - Team 1')
